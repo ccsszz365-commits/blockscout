@@ -1,0 +1,161 @@
+services:
+  db:
+    ports: !reset []
+
+  stats-db:
+    ports: !reset []
+
+  backend:
+    image: ${CHAINFORGE_BLOCKSCOUT_BACKEND_IMAGE:-chainforge/blockscout-backend}:${CHAINFORGE_EXPLORER_TAG:-local}
+    pull_policy: never
+    build:
+      context: ..
+      dockerfile: ./docker/Dockerfile
+      args:
+        API_V1_READ_METHODS_DISABLED: "false"
+        DISABLE_WEBAPP: "false"
+        API_V1_WRITE_METHODS_DISABLED: "false"
+        ADMIN_PANEL_ENABLED: "false"
+        RELEASE_VERSION: 11.0.0
+    environment:
+      ETHEREUM_JSONRPC_VARIANT: besu
+      ETHEREUM_JSONRPC_HTTP_URL: ${EXPLORER_RPC_HTTP_URL:-http://host.docker.internal:8545/}
+      ETHEREUM_JSONRPC_TRACE_URL: ${EXPLORER_RPC_TRACE_URL:-http://host.docker.internal:8545/}
+      ETHEREUM_JSONRPC_WS_URL: ${EXPLORER_RPC_WS_URL:-}
+      ETHEREUM_JSONRPC_DISABLE_ARCHIVE_BALANCES: "true"
+      CHAIN_ID: ${EXPLORER_CHAIN_ID:-7864395}
+      COIN: ${EXPLORER_CHAIN_SYMBOL:-VEL}
+      COIN_NAME: ${EXPLORER_CHAIN_NAME:-VELOZA}
+      HOMEPAGE_LATEST_BLOCKS_COUNT: "6"
+      INDEXER_DISABLE_BLOCK_REWARD_FETCHER: "true"
+      INDEXER_DISABLE_INTERNAL_TRANSACTIONS_FETCHER: "true"
+      INDEXER_DISABLE_PENDING_TRANSACTIONS_FETCHER: "true"
+      INDEXER_DISABLE_ADDRESS_COIN_BALANCE_FETCHER: "true"
+      MARKET_COINGECKO_COIN_ID: ${EXPLORER_COIN_ID:-veloza}
+      MARKET_COINGECKO_BASE_URL: http://explorer-admin-backend:19090/api/v3
+    networks:
+      - default
+      - chainforge_default
+
+  frontend:
+    image: ${CHAINFORGE_BLOCKSCOUT_FRONTEND_IMAGE:-chainforge/blockscout-frontend}:${CHAINFORGE_EXPLORER_TAG:-local}
+    pull_policy: never
+    platform: linux/amd64
+    restart: always
+    container_name: frontend
+    build:
+      context: ../../chainforge-explorer-frontend
+      dockerfile: Dockerfile
+      args:
+        GIT_TAG: ${CHAINFORGE_EXPLORER_TAG:-local}
+    depends_on:
+      - backend
+      - explorer-admin-backend
+    environment:
+      NEXT_PUBLIC_APP_PROTOCOL: ${EXPLORER_PUBLIC_PROTOCOL:-http}
+      NEXT_PUBLIC_APP_HOST: ${EXPLORER_PUBLIC_HOST:-localhost}
+      NEXT_PUBLIC_APP_PORT: ${EXPLORER_PUBLIC_PORT:-80}
+      NEXT_PUBLIC_APP_ENV: production
+      NEXT_PUBLIC_APP_INSTANCE: ${EXPLORER_CHAIN_NAME:-VELOZA}
+      NEXT_PUBLIC_NAVIGATION_LAYOUT: horizontal
+      NEXT_PUBLIC_API_PROTOCOL: ${EXPLORER_PUBLIC_PROTOCOL:-http}
+      NEXT_PUBLIC_API_HOST: ${EXPLORER_PUBLIC_HOST:-localhost}
+      NEXT_PUBLIC_API_BASE_PATH: /
+      NEXT_PUBLIC_API_WEBSOCKET_PROTOCOL: ${EXPLORER_PUBLIC_WS_PROTOCOL:-ws}
+      NEXT_PUBLIC_STATS_API_HOST: ${EXPLORER_PUBLIC_PROTOCOL:-http}://${EXPLORER_PUBLIC_HOST:-localhost}
+      NEXT_PUBLIC_STATS_API_BASE_PATH: ${EXPLORER_STATS_API_PATH:-/stats-api}
+      NEXT_PUBLIC_VISUALIZE_API_HOST: ${EXPLORER_PUBLIC_PROTOCOL:-http}://${EXPLORER_PUBLIC_HOST:-localhost}
+      NEXT_PUBLIC_VISUALIZE_API_BASE_PATH: ${EXPLORER_VISUALIZER_API_PATH:-/visualizer-api}
+      NEXT_PUBLIC_EXPLORER_ADMIN_API_HOST: ${EXPLORER_ADMIN_PUBLIC_API_URL:-http://localhost:19090}
+      NEXT_PUBLIC_NETWORK_NAME: ${EXPLORER_CHAIN_NAME:-VELOZA}
+      NEXT_PUBLIC_NETWORK_SHORT_NAME: ${EXPLORER_CHAIN_NAME:-VELOZA}
+      NEXT_PUBLIC_PROMOTE_BLOCKSCOUT_IN_TITLE: "false"
+      NEXT_PUBLIC_OG_DESCRIPTION: "Search transactions, verify smart contracts, analyze addresses, and track network activity on the ${EXPLORER_CHAIN_NAME:-VELOZA} network."
+      NEXT_PUBLIC_NETWORK_ID: ${EXPLORER_CHAIN_ID:-7864395}
+      NEXT_PUBLIC_NETWORK_RPC_URL: ${EXPLORER_RPC_HTTP_URL:-http://localhost:8545}
+      NEXT_PUBLIC_NETWORK_CURRENCY_NAME: ${EXPLORER_CHAIN_NAME:-VELOZA}
+      NEXT_PUBLIC_NETWORK_CURRENCY_SYMBOL: ${EXPLORER_CHAIN_SYMBOL:-VEL}
+      NEXT_PUBLIC_NETWORK_CURRENCY_DECIMALS: "18"
+      NEXT_PUBLIC_HOMEPAGE_STATS: '["total_blocks","average_block_time","total_txs","wallet_addresses","gas_tracker"]'
+      NEXT_PUBLIC_HOMEPAGE_CHARTS: '["daily_txs"]'
+      NEXT_PUBLIC_HOMEPAGE_LATEST_BLOCKS_COUNT: "6"
+      NEXT_PUBLIC_HOMEPAGE_LATEST_BLOCKS_COUNT_MOBILE: "3"
+      NEXT_PUBLIC_HOMEPAGE_LATEST_TRANSACTIONS_COUNT: "6"
+      NEXT_PUBLIC_HOMEPAGE_LATEST_TRANSACTIONS_COUNT_MOBILE: "3"
+      NEXT_PUBLIC_GAS_TRACKER_UNITS: '["gwei"]'
+      NEXT_PUBLIC_IS_TESTNET: ${EXPLORER_IS_TESTNET:-false}
+
+  stats:
+    environment:
+      STATS__BLOCKSCOUT_API_URL: http://backend:4000
+
+  explorer-admin-db:
+    image: postgres:17-alpine
+    restart: always
+    container_name: explorer-admin-db
+    environment:
+      POSTGRES_DB: explorer_admin
+      POSTGRES_USER: explorer_admin
+      POSTGRES_PASSWORD: explorer_admin
+    volumes:
+      - explorer-admin-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U explorer_admin -d explorer_admin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  explorer-admin-backend:
+    image: ${CHAINFORGE_EXPLORER_ADMIN_BACKEND_IMAGE:-chainforge/explorer-admin-backend}:${CHAINFORGE_EXPLORER_TAG:-local}
+    pull_policy: never
+    restart: always
+    container_name: explorer-admin-backend
+    build:
+      context: ../../..
+      dockerfile: explorer-admin-backend/Dockerfile
+    depends_on:
+      explorer-admin-db:
+        condition: service_healthy
+    environment:
+      EXPLORER_ADMIN_BACKEND_CONFIG: /app/config.toml
+    volumes:
+      - ../../../deploy/explorer/generated/explorer-admin-backend.toml:/app/config.toml:ro
+      - explorer-admin-uploads:/data/uploads
+  explorer-admin-web:
+    image: ${CHAINFORGE_EXPLORER_ADMIN_WEB_IMAGE:-chainforge/explorer-admin-web}:${CHAINFORGE_EXPLORER_TAG:-local}
+    pull_policy: never
+    restart: always
+    container_name: explorer-admin-web
+    build:
+      context: ../../../explorer-admin-web
+      dockerfile: Dockerfile
+    depends_on:
+      - explorer-admin-backend
+    volumes:
+      - ../../../deploy/explorer/generated/explorer-admin-web.app-config.json:/usr/share/nginx/html/app-config.json:ro
+  proxy:
+    depends_on:
+      - backend
+      - frontend
+      - stats
+      - explorer-admin-web
+      - explorer-admin-backend
+    environment:
+      FRONT_PROXY_PASS: http://frontend:3000/
+      BACK_PROXY_PASS: http://backend:4000
+      ADMIN_WEB_PROXY_PASS: http://explorer-admin-web:80
+      ADMIN_API_PROXY_PASS: http://explorer-admin-backend:19090
+      EXPLORER_ADMIN_WEB_PATH: ${EXPLORER_ADMIN_WEB_PATH:-/admin}
+      EXPLORER_ADMIN_API_PATH: ${EXPLORER_ADMIN_API_PATH:-/admin-api}
+      EXPLORER_STATS_API_PATH: ${EXPLORER_STATS_API_PATH:-/stats-api}
+      EXPLORER_VISUALIZER_API_PATH: ${EXPLORER_VISUALIZER_API_PATH:-/visualizer-api}
+
+networks:
+  chainforge_default:
+    external: true
+    name: chainforge_default
+
+volumes:
+  explorer-admin-db-data:
+  explorer-admin-uploads:
