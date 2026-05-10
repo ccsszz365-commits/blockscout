@@ -64,6 +64,9 @@ config :block_scout_web,
   sensitive_endpoints_api_key: System.get_env("API_SENSITIVE_ENDPOINTS_KEY"),
   disable_api?: disable_api?
 
+config :block_scout_web, :homepage,
+  latest_blocks_count: ConfigHelper.parse_integer_env_var("HOMEPAGE_LATEST_BLOCKS_COUNT", 4)
+
 config :block_scout_web, :recaptcha,
   v2_client_key: System.get_env("RE_CAPTCHA_CLIENT_KEY"),
   v2_secret_key: System.get_env("RE_CAPTCHA_SECRET_KEY"),
@@ -391,6 +394,7 @@ config :explorer, Explorer.Chain.Cache.Counters.PendingTransactionOperationCount
 config :explorer, Explorer.Chain.Cache.GasPriceOracle,
   global_ttl: ConfigHelper.parse_time_env_var("GAS_PRICE_ORACLE_CACHE_PERIOD", "30s"),
   simple_transaction_gas: ConfigHelper.parse_integer_env_var("GAS_PRICE_ORACLE_SIMPLE_TRANSACTION_GAS", 21_000),
+  min_gas_price_wei: ConfigHelper.parse_integer_env_var("GAS_PRICE_ORACLE_MIN_GAS_PRICE_WEI", 0),
   num_of_blocks: ConfigHelper.parse_integer_env_var("GAS_PRICE_ORACLE_NUM_OF_BLOCKS", 200),
   safelow_percentile: ConfigHelper.parse_integer_env_var("GAS_PRICE_ORACLE_SAFELOW_PERCENTILE", 35),
   average_percentile: ConfigHelper.parse_integer_env_var("GAS_PRICE_ORACLE_AVERAGE_PERCENTILE", 60),

@@ -296,6 +296,8 @@ defmodule Explorer.Chain.Cache.GasPriceOracle do
   end
 
   defp compose_gas_price(fee, time, exchange_rate, base_fee, priority_fee) do
+    fee = apply_min_gas_price(fee)
+
     %{
       price: fee |> format_wei(),
       time:
@@ -332,6 +334,18 @@ defmodule Explorer.Chain.Cache.GasPriceOracle do
     value |> Wei.from(:wei)
   end
 
+  defp apply_min_gas_price(nil), do: min_gas_price()
+
+  defp apply_min_gas_price(%Wei{value: fee_value} = fee) do
+    case min_gas_price() do
+      %Wei{value: min_value} = min_fee ->
+        if Decimal.compare(fee_value, min_value) == :lt, do: min_fee, else: fee
+
+      nil ->
+        fee
+    end
+  end
+
   defp format_wei(nil), do: nil
 
   defp format_wei(wei), do: wei |> Wei.to(:gwei) |> Decimal.to_float() |> Float.ceil(2)
@@ -339,6 +353,13 @@ defmodule Explorer.Chain.Cache.GasPriceOracle do
   defp global_ttl, do: Application.get_env(:explorer, __MODULE__)[:global_ttl]
 
   defp simple_transaction_gas, do: Application.get_env(:explorer, __MODULE__)[:simple_transaction_gas]
+
+  defp min_gas_price do
+    case Application.get_env(:explorer, __MODULE__)[:min_gas_price_wei] do
+      value when is_integer(value) and value > 0 -> value |> Decimal.new() |> Wei.from(:wei)
+      _ -> nil
+    end
+  end
 
   defp num_of_blocks, do: Application.get_env(:explorer, __MODULE__)[:num_of_blocks]
 
